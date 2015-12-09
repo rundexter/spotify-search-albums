@@ -24,5 +24,6 @@
             "title":"Array of albums"
         }
     ],
+    "icon": "spotify",
     "title": "Spotify Search Albums" /* Required.A display name for the module */
 }
