@@ -1,90 +1,20 @@
-var _ = require('lodash');
-var SpotifyWebApi = require('spotify-web-api-node');
+var _ = require('lodash'),
+    util = require('./util.js'),
+    SpotifyWebApi = require('spotify-web-api-node');
 
-var globalPickResult = {
-    'body.albums.items': {
-        key: 'albums',
-        fields: {
-            name: 'Album',
-            href: 'URL',
-            uri: 'URI',
-            available_markets: 'Markets'
-        }
-    }
-};
+var pickInputs = {
+        'q': { key: 'q', validate: { req: true } },
+        'market': 'market',
+        'limit': 'limit'
+    },
+    pickOutputs = {
+        'name': { key: 'body.albums.items', fields: ['name'] },
+        'href': { key: 'body.albums.items', fields: ['href'] },
+        'uri': { key: 'body.albums.items', fields: ['uri'] },
+        'available_markets': { key: 'body.albums.items', fields: ['available_markets'] }
+    };
 
 module.exports = {
-    /**
-     * Return pick result.
-     *
-     * @param output
-     * @param pickResult
-     * @returns {*}
-     */
-    pickResult: function (output, pickResult) {
-        var result = {};
-
-        _.map(_.keys(pickResult), function (resultVal) {
-
-            if (_.has(output, resultVal)) {
-
-                if (_.isObject(pickResult[resultVal])) {
-                    if (_.isArray(_.get(output, resultVal))) {
-
-                        if (!_.isArray(result[pickResult[resultVal].key])) {
-                            result[pickResult[resultVal].key] = [];
-                        }
-
-                        _.map(_.get(output, resultVal), function (inOutArrayValue) {
-
-                            result[pickResult[resultVal].key].push(this.pickResult(inOutArrayValue, pickResult[resultVal].fields));
-                        }, this);
-                    } else if (_.isObject(_.get(output, resultVal))){
-
-                        result[pickResult[resultVal].key] = this.pickResult(_.get(output, resultVal), pickResult[resultVal].fields);
-                    }
-                } else {
-                    _.set(result, pickResult[resultVal], _.get(output, resultVal));
-                }
-            }
-        }, this);
-
-        return result;
-    },
-
-    /**
-     * Set acess token.
-     *
-     * @param dexter
-     * @param spotifyApi
-     */
-    authParams: function (dexter, spotifyApi) {
-
-        if (dexter.environment('spotify_access_token')) {
-
-            spotifyApi.setAccessToken(dexter.environment('spotify_access_token'));
-        }
-    },
-
-    /**
-     * Set failure response.
-     *
-     * @param err
-     * @param dexter
-     */
-    failureProcess: function (err, dexter) {
-
-        var result = _.isArray(err)? err : [err];
-
-        if (!dexter.environment('spotify_access_token')) {
-            var envError = 'This module need optional environment variable [spotify_access_token];';
-
-            result.unshift(envError);
-        }
-
-        return result;
-    },
-
     /**
      * The main entry point for the Dexter module.
      *
@@ -92,18 +22,20 @@ module.exports = {
      * @param {AppData} dexter Container for all data used in this workflow.
      */
     run: function(step, dexter) {
+        var spotifyApi = new SpotifyWebApi(),
+            token = dexter.provider('spotify').credentials('access_token'),
+            inputs = util.pickInputs(step, pickInputs),
+            validateErrors = util.checkValidateErrors(inputs, pickInputs);
 
-        var spotifyApi = new SpotifyWebApi();
+        if (validateErrors)
+            return this.fail(validateErrors);
 
-        this.authParams(dexter, spotifyApi);
-
-        spotifyApi.searchAlbums(step.input('q').first(), _.omit(step.inputs(), 'q'))
+        spotifyApi.setAccessToken(token);
+        spotifyApi.searchAlbums(inputs.q, _.omit(inputs, 'q'))
             .then(function(data) {
-
-                this.complete(this.pickResult(data, globalPickResult));
+                this.complete(util.pickOutputs(data, pickOutputs));
             }.bind(this), function(err) {
-
-                this.fail(this.failureProcess(err, dexter));
+                this.fail(err);
             }.bind(this));
     }
 };
